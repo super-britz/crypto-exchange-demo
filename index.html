@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crypto Exchange Demo</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <div class="eyebrow">BTCUSDT Perpetual</div>
+          <h1>Crypto Exchange Demo</h1>
+        </div>
+        <div class="market-strip" aria-label="market summary">
+          <div class="metric">
+            <span>标记价格</span>
+            <strong id="markPrice">$68,240.00</strong>
+          </div>
+          <div class="metric">
+            <span>1m 波动</span>
+            <strong id="priceChange">+0.00</strong>
+          </div>
+          <div class="metric">
+            <span>资金费率</span>
+            <strong id="fundingRate">+0.0000%</strong>
+          </div>
+          <div class="metric">
+            <span>权益</span>
+            <strong id="equity">10,000.00 USDT</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="toolbar" aria-label="demo controls">
+        <button class="icon-button" id="runToggle" title="暂停行情">暂停</button>
+        <button class="tool-button" id="shockToggle">暴跌模拟</button>
+        <button class="tool-button" id="resetButton">重置</button>
+      </section>
+
+      <section class="trading-grid">
+        <div class="chart-panel">
+          <div class="panel-title">
+            <div><strong>K 线图</strong></div>
+            <span>Canvas 渲染，模拟 1m candle</span>
+          </div>
+          <canvas class="kline-canvas" id="klineCanvas" aria-label="K line chart"></canvas>
+        </div>
+
+        <aside class="panel orderbook">
+          <div class="panel-title">
+            <div><strong>盘口 / 订单簿</strong></div>
+            <span>模拟 socket 高频推送</span>
+          </div>
+          <div class="book-head">
+            <span>价格</span>
+            <span>数量</span>
+            <span>累计</span>
+          </div>
+          <div class="book-side" id="asks"></div>
+          <div class="mark-price" id="bookMarkPrice">68,240.00</div>
+          <div class="book-side" id="bids"></div>
+        </aside>
+
+        <aside class="panel ticket">
+          <div class="panel-title">
+            <div><strong>下单区</strong></div>
+            <span>市价 / 限价 / 杠杆</span>
+          </div>
+
+          <div class="segmented" id="orderTypeGroup">
+            <button class="active" data-order-type="market">市价</button>
+            <button data-order-type="limit">限价</button>
+          </div>
+
+          <div class="segmented side-switch" id="sideGroup">
+            <button class="active long" data-side="long">开多</button>
+            <button data-side="short">开空</button>
+          </div>
+
+          <label class="field limit-field hidden" id="limitField">
+            <span>限价价格</span>
+            <input id="limitPriceInput" value="68240.0" />
+          </label>
+
+          <label class="field">
+            <span>保证金 USDT</span>
+            <input id="marginInput" value="500" />
+          </label>
+
+          <label class="field">
+            <span id="leverageLabel">杠杆 10x</span>
+            <input id="leverageInput" type="range" min="1" max="50" value="10" />
+          </label>
+
+          <div class="ticket-summary">
+            <span>可用余额</span>
+            <strong id="balanceText">10,000.00 USDT</strong>
+          </div>
+          <div class="ticket-summary">
+            <span>名义价值</span>
+            <strong id="notionalText">5,000.00 USDT</strong>
+          </div>
+
+          <button class="submit long" id="openButton">开多 BTC</button>
+          <button class="close-position" id="closeButton" disabled>手动平仓</button>
+        </aside>
+
+        <section class="panel position-panel">
+          <div class="panel-title">
+            <div><strong>仓位 / 风控</strong></div>
+            <span>实时盈亏与强平线</span>
+          </div>
+          <div id="positionContent" class="empty-state">暂无仓位，开仓后这里会展示强平价和实时盈亏。</div>
+        </section>
+
+        <section class="panel log-panel">
+          <div class="panel-title">
+            <div><strong>事件日志</strong></div>
+            <span>开仓 / 平仓 / 强平</span>
+          </div>
+          <div class="logs" id="logs"></div>
+        </section>
+      </section>
+    </main>
+    <script src="./src/app.js" defer></script>
+  </body>
+</html>

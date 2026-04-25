@@ -1,0 +1,544 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #090d14;
+  color: #e6edf7;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  letter-spacing: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(46, 139, 160, 0.16), transparent 32rem),
+    linear-gradient(180deg, #0a0f18 0%, #090d14 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  width: min(1500px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  color: #88d8c0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 3px 0 0;
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.market-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(132px, 1fr));
+  gap: 8px;
+  min-width: min(760px, 100%);
+}
+
+.metric,
+.panel,
+.chart-panel {
+  border: 1px solid #1e293b;
+  background: rgba(13, 19, 31, 0.9);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
+.metric {
+  min-height: 64px;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.metric span,
+.info span,
+.ticket-summary span,
+.field span {
+  display: block;
+  color: #8392aa;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.metric strong {
+  font-size: 17px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.icon-button,
+.tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid #26344a;
+  border-radius: 8px;
+  background: #121a29;
+  color: #dce6f5;
+}
+
+.icon-button {
+  min-width: 64px;
+}
+
+.tool-button {
+  padding: 0 13px;
+}
+
+.tool-button.danger {
+  border-color: rgba(239, 83, 80, 0.55);
+  color: #ffb0ae;
+}
+
+.trading-grid {
+  display: grid;
+  grid-template-columns: minmax(520px, 1fr) 300px 320px;
+  grid-template-rows: 510px minmax(230px, auto);
+  gap: 12px;
+}
+
+.chart-panel,
+.panel {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.chart-panel {
+  min-width: 0;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.panel-title div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-title span {
+  color: #71809b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.kline-canvas {
+  display: block;
+  width: 100%;
+  height: calc(100% - 52px);
+}
+
+.orderbook {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.book-head,
+.book-row {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr 0.9fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 27px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.book-head {
+  color: #8392aa;
+  border-bottom: 1px solid #1a2435;
+}
+
+.book-head span:not(:first-child),
+.book-row span:not(:first-child) {
+  text-align: right;
+}
+
+.book-side {
+  padding: 4px 0;
+}
+
+.book-row {
+  position: relative;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.book-row span {
+  position: relative;
+  z-index: 1;
+}
+
+.depth {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  bottom: 2px;
+  opacity: 0.22;
+}
+
+.depth.ask {
+  background: #ef5350;
+}
+
+.depth.bid {
+  background: #16c784;
+}
+
+.mark-price {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  border-block: 1px solid #243149;
+  color: #f5c542;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket {
+  grid-column: 3;
+  grid-row: 1;
+  padding-bottom: 14px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 12px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #0a101b;
+}
+
+.segmented button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8b98ae;
+}
+
+.segmented button.active {
+  background: #1c283b;
+  color: #ffffff;
+}
+
+.segmented button.long {
+  background: #0d5c46;
+}
+
+.segmented button.short {
+  background: #7a2d36;
+}
+
+.field {
+  display: block;
+  margin: 13px 12px;
+}
+
+.field input:not([type="range"]) {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #26344a;
+  border-radius: 8px;
+  background: #0c1320;
+  color: #e6edf7;
+  padding: 0 11px;
+}
+
+.field input[type="range"] {
+  width: 100%;
+  accent-color: #4ecdc4;
+}
+
+.ticket-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 12px;
+  color: #d7e1ef;
+}
+
+.ticket-summary span {
+  margin: 0;
+}
+
+.submit,
+.close-position {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: calc(100% - 24px);
+  min-height: 42px;
+  margin: 12px 12px 0;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 800;
+}
+
+.submit.long {
+  background: #16a06f;
+}
+
+.submit.short {
+  background: #d14e55;
+}
+
+.close-position {
+  border: 1px solid #34445e;
+  background: #141d2c;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.hidden {
+  display: none;
+}
+
+.position-panel {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 14px;
+}
+
+.info {
+  min-height: 70px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0c1320;
+  padding: 12px;
+}
+
+.info strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-meter {
+  grid-column: span 4;
+  position: relative;
+  min-height: 54px;
+  border: 1px solid #26344a;
+  border-radius: 8px;
+  background: #0c1320;
+  padding: 11px 12px;
+  overflow: hidden;
+}
+
+.risk-meter div,
+.risk-meter strong {
+  position: relative;
+  z-index: 1;
+}
+
+.risk-meter div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #8392aa;
+  font-size: 12px;
+}
+
+.risk-meter strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.risk-meter > span {
+  position: absolute;
+  inset: auto auto 0 0;
+  height: 4px;
+  background: linear-gradient(90deg, #ef5350, #f5c542, #16c784);
+}
+
+.empty-state {
+  display: grid;
+  min-height: 170px;
+  place-items: center;
+  padding: 24px;
+  color: #8392aa;
+  text-align: center;
+}
+
+.log-panel {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.logs {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.log {
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0c1320;
+  padding: 10px;
+}
+
+.log span {
+  color: #71809b;
+  font-size: 11px;
+}
+
+.log p {
+  margin: 4px 0 0;
+  color: #d8e2f0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.log.success {
+  border-color: rgba(22, 199, 132, 0.35);
+}
+
+.log.danger {
+  border-color: rgba(239, 83, 80, 0.45);
+}
+
+.text-up {
+  color: #16c784;
+}
+
+.text-down,
+.text-danger {
+  color: #ef5350;
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .market-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trading-grid {
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: 480px auto auto;
+  }
+
+  .orderbook {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .ticket {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .position-panel {
+    grid-column: 1 / span 2;
+    grid-row: 3;
+  }
+
+  .log-panel {
+    grid-column: 1 / span 2;
+    grid-row: 4;
+  }
+}
+
+@media (max-width: 820px) {
+  .app-shell {
+    width: min(100vw - 20px, 680px);
+    padding: 14px 0;
+  }
+
+  .market-strip,
+  .trading-grid,
+  .position-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trading-grid {
+    grid-template-rows: 420px auto auto auto auto;
+  }
+
+  .chart-panel,
+  .orderbook,
+  .ticket,
+  .position-panel,
+  .log-panel {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .position-grid {
+    padding: 12px;
+  }
+
+  .risk-meter {
+    grid-column: span 1;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+}
