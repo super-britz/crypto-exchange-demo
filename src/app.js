@@ -30,6 +30,8 @@ let reconnectTimer;
 let localStressTimer;
 let reconnectAttempts = 0;
 let wsEndpointIndex = 0;
+let marketFrameId = 0;
+let chartReady = false;
 
 const state = {
   candles: createCandles(),
@@ -212,6 +214,14 @@ function addLog(message, tone = "info") {
   renderLogs();
 }
 
+function requestMarketRender() {
+  if (marketFrameId) return;
+  marketFrameId = window.requestAnimationFrame(() => {
+    marketFrameId = 0;
+    renderMarketFrame();
+  });
+}
+
 function setStreamStatus(status) {
   state.streamStatus = status;
   const labels = {
@@ -334,7 +344,7 @@ function tick() {
   const low = Math.min(last.close, close) - Math.random() * volatility * 0.18;
 
   const nextCandle = {
-    time: Date.now(),
+    time: last.time + 60000,
     open: last.close,
     high,
     low,
@@ -349,7 +359,8 @@ function tick() {
   state.orderBook = createOrderBook(close);
 
   checkLiquidation();
-  render();
+  updateChartWithCandle(nextCandle);
+  requestMarketRender();
 }
 
 function startLocalStressStream() {
@@ -414,7 +425,9 @@ function connectMarketStream() {
     const data = payload.data;
 
     if (stream.endsWith(`@kline_${KLINE_INTERVAL}`)) {
-      upsertStreamCandle(mapStreamKline(data.k));
+      const nextCandle = mapStreamKline(data.k);
+      upsertStreamCandle(nextCandle);
+      updateChartWithCandle(nextCandle);
     }
 
     if (stream.endsWith("@depth20@100ms")) {
@@ -425,7 +438,7 @@ function connectMarketStream() {
     }
 
     checkLiquidation();
-    render();
+    requestMarketRender();
   });
 
   marketSocket.addEventListener("error", () => {
@@ -444,7 +457,7 @@ function connectMarketStream() {
       state.fallbackMode = true;
       addLog("Binance WebSocket 暂不可用，已降级为本地模拟行情。", "danger");
       startLocalStressStream();
-      render();
+      renderAll();
       return;
     }
 
@@ -455,12 +468,12 @@ function connectMarketStream() {
 
 function upsertStreamCandle(nextCandle) {
   const last = state.candles[state.candles.length - 1];
+  state.limitPrice = nextCandle.close;
   if (last && last.time === nextCandle.time) {
     state.candles = [...state.candles.slice(0, -1), nextCandle];
     return;
   }
   state.candles = [...state.candles.slice(-(MAX_CANDLES - 1)), nextCandle];
-  state.limitPrice = nextCandle.close;
 }
 
 function resumeMarket() {
@@ -538,7 +551,8 @@ function openPosition() {
     `${state.side === "long" ? "开多" : "开空"} ${formatUsd(size, 4)} BTC，入场价 ${formatUsd(entryPrice)}，${state.leverage}x。`,
     "success",
   );
-  render();
+  renderMarketFrame();
+  renderControls();
 }
 
 function closePosition() {
@@ -550,7 +564,8 @@ function closePosition() {
     pnl >= 0 ? "success" : "danger",
   );
   state.position = null;
-  render();
+  renderMarketFrame();
+  renderControls();
 }
 
 function resetDemo() {
@@ -566,13 +581,20 @@ function resetDemo() {
   state.orderBook = createOrderBook(latestPrice());
   addLog("账户和行情已重置。", "info");
   resumeMarket();
-  render();
+  renderAll();
 }
 
-function renderKline() {
+function setChartData() {
   candleSeries.setData(state.candles.map(toCandlePoint));
   volumeSeries.setData(state.candles.map(toVolumePoint));
   chartApi.timeScale().scrollToRealTime();
+  chartReady = true;
+}
+
+function updateChartWithCandle(candle) {
+  if (!chartReady) return;
+  candleSeries.update(toCandlePoint(candle));
+  volumeSeries.update(toVolumePoint(candle));
 }
 
 function renderBook() {
@@ -671,7 +693,7 @@ function renderControls() {
   });
 }
 
-function render() {
+function renderMarketFrame() {
   const markPrice = latestPrice();
   const change = markPrice - previousPrice();
   const fundingRate = calcFundingRate(markPrice, change);
@@ -686,9 +708,13 @@ function render() {
   dom.fundingRate.className = fundingRate >= 0 ? "text-up" : "text-down";
   dom.equity.textContent = `${formatUsd(state.balance + pnl)} USDT`;
 
-  renderKline();
   renderBook();
   renderPosition();
+}
+
+function renderAll() {
+  setChartData();
+  renderMarketFrame();
   renderControls();
   renderLogs();
 }
@@ -747,5 +773,5 @@ state.limitPrice = latestPrice();
 initChart();
 loadInitialCandles().finally(() => {
   resumeMarket();
-  render();
+  renderAll();
 });
