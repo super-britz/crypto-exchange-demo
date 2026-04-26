@@ -165,10 +165,14 @@ h1 {
   white-space: nowrap;
 }
 
-.kline-canvas {
+.kline-chart {
   display: block;
   width: 100%;
   height: calc(100% - 52px);
+}
+
+.kline-chart table {
+  font-variant-numeric: tabular-nums;
 }
 
 .orderbook {

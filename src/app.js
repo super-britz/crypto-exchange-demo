@@ -1,7 +1,21 @@
+import {
+  CandlestickSeries,
+  ColorType,
+  createChart,
+  CrosshairMode,
+  HistogramSeries,
+} from "lightweight-charts";
+
 const START_PRICE = 68240;
 const MAX_CANDLES = 72;
 const INITIAL_BALANCE = 10000;
 const MAINTENANCE_RATE = 0.006;
+const UP_COLOR = "#16c784";
+const DOWN_COLOR = "#ef5350";
+
+let chartApi;
+let candleSeries;
+let volumeSeries;
 
 const state = {
   candles: createCandles(),
@@ -32,7 +46,7 @@ const dom = {
   runToggle: document.querySelector("#runToggle"),
   shockToggle: document.querySelector("#shockToggle"),
   resetButton: document.querySelector("#resetButton"),
-  canvas: document.querySelector("#klineCanvas"),
+  chart: document.querySelector("#klineChart"),
   asks: document.querySelector("#asks"),
   bids: document.querySelector("#bids"),
   bookMarkPrice: document.querySelector("#bookMarkPrice"),
@@ -143,6 +157,104 @@ function addLog(message, tone = "info") {
     ...state.logs,
   ].slice(0, 8);
   renderLogs();
+}
+
+function toChartTime(time) {
+  return Math.floor(time / 1000);
+}
+
+function toCandlePoint(candle) {
+  return {
+    time: toChartTime(candle.time),
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+  };
+}
+
+function toVolumePoint(candle) {
+  return {
+    time: toChartTime(candle.time),
+    value: candle.volume,
+    color: candle.close >= candle.open
+      ? "rgba(22, 199, 132, 0.38)"
+      : "rgba(239, 83, 80, 0.38)",
+  };
+}
+
+function initChart() {
+  const rect = dom.chart.getBoundingClientRect();
+  chartApi = createChart(dom.chart, {
+    width: Math.max(320, Math.floor(rect.width)),
+    height: Math.max(320, Math.floor(rect.height)),
+    autoSize: true,
+    layout: {
+      background: { type: ColorType.Solid, color: "#0c111d" },
+      textColor: "#8b98ae",
+      fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+    },
+    grid: {
+      vertLines: { color: "#151f31" },
+      horzLines: { color: "#1d2638" },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: {
+        color: "rgba(245, 197, 66, 0.45)",
+        labelBackgroundColor: "#f5c542",
+      },
+      horzLine: {
+        color: "rgba(245, 197, 66, 0.45)",
+        labelBackgroundColor: "#f5c542",
+      },
+    },
+    rightPriceScale: {
+      borderColor: "#26344a",
+      scaleMargins: {
+        top: 0.08,
+        bottom: 0.24,
+      },
+    },
+    timeScale: {
+      borderColor: "#26344a",
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 8,
+      barSpacing: 8,
+    },
+    localization: {
+      priceFormatter: (price) => formatUsd(price),
+    },
+  });
+
+  candleSeries = chartApi.addSeries(CandlestickSeries, {
+    upColor: UP_COLOR,
+    downColor: DOWN_COLOR,
+    borderUpColor: UP_COLOR,
+    borderDownColor: DOWN_COLOR,
+    wickUpColor: UP_COLOR,
+    wickDownColor: DOWN_COLOR,
+    priceLineColor: "#f5c542",
+    lastValueVisible: true,
+    priceLineVisible: true,
+  });
+
+  volumeSeries = chartApi.addSeries(HistogramSeries, {
+    priceFormat: {
+      type: "volume",
+    },
+    priceScaleId: "",
+    lastValueVisible: false,
+    priceLineVisible: false,
+  });
+
+  volumeSeries.priceScale().applyOptions({
+    scaleMargins: {
+      top: 0.78,
+      bottom: 0,
+    },
+  });
 }
 
 function tick() {
@@ -262,79 +374,10 @@ function resetDemo() {
   render();
 }
 
-function drawKline() {
-  const canvas = dom.canvas;
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-
-  const padding = { top: 20, right: 62, bottom: 34, left: 14 };
-  const chartWidth = rect.width - padding.left - padding.right;
-  const chartHeight = rect.height - padding.top - padding.bottom;
-  const maxPrice = Math.max(...state.candles.map((item) => item.high));
-  const minPrice = Math.min(...state.candles.map((item) => item.low));
-  const range = maxPrice - minPrice || 1;
-  const candleWidth = chartWidth / state.candles.length;
-  const y = (price) => padding.top + ((maxPrice - price) / range) * chartHeight;
-
-  ctx.fillStyle = "#0c111d";
-  ctx.fillRect(0, 0, rect.width, rect.height);
-  ctx.strokeStyle = "#1d2638";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i += 1) {
-    const lineY = padding.top + (chartHeight / 4) * i;
-    ctx.beginPath();
-    ctx.moveTo(padding.left, lineY);
-    ctx.lineTo(rect.width - padding.right, lineY);
-    ctx.stroke();
-
-    const price = maxPrice - (range / 4) * i;
-    ctx.fillStyle = "#71809b";
-    ctx.font = "11px Inter, system-ui";
-    ctx.fillText(formatUsd(price, 0), rect.width - padding.right + 12, lineY + 4);
-  }
-
-  state.candles.forEach((candle, index) => {
-    const x = padding.left + index * candleWidth + candleWidth / 2;
-    const isUp = candle.close >= candle.open;
-    const color = isUp ? "#16c784" : "#ef5350";
-    const openY = y(candle.open);
-    const closeY = y(candle.close);
-    const highY = y(candle.high);
-    const lowY = y(candle.low);
-    const bodyTop = Math.min(openY, closeY);
-    const bodyHeight = Math.max(2, Math.abs(openY - closeY));
-
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x, highY);
-    ctx.lineTo(x, lowY);
-    ctx.stroke();
-
-    ctx.fillStyle = color;
-    ctx.fillRect(
-      x - Math.max(2, candleWidth * 0.3),
-      bodyTop,
-      Math.max(3, candleWidth * 0.6),
-      bodyHeight,
-    );
-  });
-
-  const latest = latestPrice();
-  const latestY = y(latest);
-  ctx.strokeStyle = "#f5c542";
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(padding.left, latestY);
-  ctx.lineTo(rect.width - padding.right, latestY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = "#f5c542";
-  ctx.fillText(formatUsd(latest), rect.width - padding.right + 12, latestY + 4);
+function renderKline() {
+  candleSeries.setData(state.candles.map(toCandlePoint));
+  volumeSeries.setData(state.candles.map(toVolumePoint));
+  chartApi.timeScale().scrollToRealTime();
 }
 
 function renderBook() {
@@ -448,7 +491,7 @@ function render() {
   dom.fundingRate.className = fundingRate >= 0 ? "text-up" : "text-down";
   dom.equity.textContent = `${formatUsd(state.balance + pnl)} USDT`;
 
-  drawKline();
+  renderKline();
   renderBook();
   renderPosition();
   renderControls();
@@ -500,8 +543,12 @@ dom.limitPriceInput.addEventListener("input", (event) => {
 
 dom.openButton.addEventListener("click", openPosition);
 dom.closeButton.addEventListener("click", closePosition);
-window.addEventListener("resize", drawKline);
+window.addEventListener("resize", () => {
+  const rect = dom.chart.getBoundingClientRect();
+  chartApi.resize(Math.max(320, Math.floor(rect.width)), Math.max(320, Math.floor(rect.height)));
+});
 
 state.limitPrice = latestPrice();
+initChart();
 scheduleSocket();
 render();

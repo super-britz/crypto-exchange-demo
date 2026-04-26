@@ -43,9 +43,9 @@
         <div class="chart-panel">
           <div class="panel-title">
             <div><strong>K 线图</strong></div>
-            <span>Canvas 渲染，模拟 1m candle</span>
+            <span>Lightweight Charts，模拟 1m candle</span>
           </div>
-          <canvas class="kline-canvas" id="klineCanvas" aria-label="K line chart"></canvas>
+          <div class="kline-chart" id="klineChart" aria-label="K line chart"></div>
         </div>
 
         <aside class="panel orderbook">
@@ -124,6 +124,6 @@
         </section>
       </section>
     </main>
-    <script src="./src/app.js" defer></script>
+    <script type="module" src="./src/app.js"></script>
   </body>
 </html>
