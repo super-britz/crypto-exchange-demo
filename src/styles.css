@@ -152,7 +152,7 @@ h1 {
 .trading-grid {
   display: grid;
   grid-template-columns: minmax(520px, 1fr) 300px 320px;
-  grid-template-rows: 510px minmax(230px, auto);
+  grid-template-rows: 510px minmax(230px, auto) minmax(240px, auto);
   gap: 12px;
 }
 
@@ -555,6 +555,73 @@ button:disabled {
   grid-row: 2;
 }
 
+.trade-panel {
+  grid-column: 1 / span 2;
+  grid-row: 3;
+}
+
+.trade-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.trade-row {
+  display: grid;
+  grid-template-columns: 72px 86px 1fr 1fr 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0c1320;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-row span {
+  color: #8392aa;
+}
+
+.trade-row strong {
+  color: #e6edf7;
+  font-size: 13px;
+}
+
+.trade-row .trade-main {
+  display: grid;
+  gap: 3px;
+}
+
+.trade-row .trade-main strong {
+  font-size: 14px;
+}
+
+.trade-pill {
+  display: inline-flex;
+  width: max-content;
+  min-width: 52px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #141d2c;
+  padding: 0 8px;
+  color: #dce6f5;
+  font-weight: 700;
+}
+
+.trade-row .text-up,
+.trade-pill.text-up {
+  color: #16c784;
+}
+
+.trade-row .text-down,
+.trade-pill.text-down {
+  color: #ef5350;
+}
+
 .logs {
   display: grid;
   gap: 8px;
@@ -609,7 +676,7 @@ button:disabled {
 
   .trading-grid {
     grid-template-columns: 1fr 320px;
-    grid-template-rows: 480px auto auto;
+    grid-template-rows: 480px auto auto auto auto;
   }
 
   .orderbook {
@@ -630,6 +697,15 @@ button:disabled {
   .log-panel {
     grid-column: 1 / span 2;
     grid-row: 4;
+  }
+
+  .trade-panel {
+    grid-column: 1 / span 2;
+    grid-row: 5;
+  }
+
+  .trade-row {
+    grid-template-columns: 70px 86px 1fr 1fr;
   }
 }
 
@@ -653,9 +729,14 @@ button:disabled {
   .orderbook,
   .ticket,
   .position-panel,
+  .trade-panel,
   .log-panel {
     grid-column: 1;
     grid-row: auto;
+  }
+
+  .trade-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .position-grid {

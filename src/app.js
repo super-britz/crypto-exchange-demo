@@ -54,6 +54,7 @@ const state = {
   balance: INITIAL_BALANCE,
   position: null,
   pendingOrders: [],
+  tradeHistory: [],
   orderBook: createOrderBook(START_PRICE),
   streamStatus: "connecting",
   usingRealMarket: false,
@@ -94,6 +95,8 @@ const dom = {
   pendingCount: document.querySelector("#pendingCount"),
   pendingOrders: document.querySelector("#pendingOrders"),
   positionContent: document.querySelector("#positionContent"),
+  tradeCount: document.querySelector("#tradeCount"),
+  tradeHistory: document.querySelector("#tradeHistory"),
   logs: document.querySelector("#logs"),
 };
 
@@ -246,6 +249,18 @@ function addLog(message, tone = "info") {
     ...state.logs,
   ].slice(0, 8);
   renderLogs();
+}
+
+function addTrade(record) {
+  state.tradeHistory = [
+    {
+      id: Date.now() + Math.random(),
+      time: new Date().toLocaleTimeString(),
+      ...record,
+    },
+    ...state.tradeHistory,
+  ].slice(0, 12);
+  renderTradeHistory();
 }
 
 function requestMarketRender() {
@@ -576,7 +591,6 @@ async function changeInterval(nextInterval) {
   stopMarketStream();
   stopLocalStressStream();
   clearLiquidationPriceLine();
-  stopFundingSettlement();
   chartReady = false;
   state.interval = nextInterval;
   state.shockMode = false;
@@ -607,7 +621,18 @@ function checkLiquidation() {
   const pnl = calcPnl(state.position, markPrice);
   const closeNotional = calcNotional(state.position.size, markPrice);
   const closeFee = calcTradingFee(closeNotional, "market");
+  const netPnl = pnl - state.position.openFee - closeFee - state.position.fundingFee;
+  state.position.closeFee = closeFee;
   state.balance = Math.max(0, state.balance + state.position.margin + pnl - closeFee);
+  addTrade({
+    action: "liquidation",
+    side: state.position.side,
+    price: markPrice,
+    size: state.position.size,
+    fee: state.position.openFee + closeFee,
+    fundingFee: state.position.fundingFee,
+    realizedPnl: netPnl,
+  });
   addLog(
     `触发强平：${state.position.side === "long" ? "多单" : "空单"}在 ${formatUsd(markPrice)} 被系统平仓，强平手续费 ${formatUsd(closeFee)} USDT。`,
     "danger",
@@ -636,6 +661,15 @@ function createPositionFromOrder(order, entryPrice, orderType = "market") {
   };
 
   state.balance -= openFee;
+  addTrade({
+    action: "open",
+    side: order.side,
+    orderType,
+    price: entryPrice,
+    size,
+    fee: openFee,
+    realizedPnl: null,
+  });
   startFundingSettlement();
   return state.position;
 }
@@ -754,7 +788,17 @@ function closePosition() {
   const closeNotional = calcNotional(state.position.size, markPrice);
   const closeFee = calcTradingFee(closeNotional, "market");
   state.position.closeFee = closeFee;
+  const netPnl = pnl - state.position.openFee - closeFee - state.position.fundingFee;
   state.balance = Math.max(0, state.balance + state.position.margin + pnl - closeFee);
+  addTrade({
+    action: "close",
+    side: state.position.side,
+    price: markPrice,
+    size: state.position.size,
+    fee: state.position.openFee + closeFee,
+    fundingFee: state.position.fundingFee,
+    realizedPnl: netPnl,
+  });
   addLog(
     `手动平仓，${pnl >= 0 ? "盈利" : "亏损"} ${formatUsd(Math.abs(pnl))} USDT，平仓手续费 ${formatUsd(closeFee)} USDT。`,
     pnl >= 0 ? "success" : "danger",
@@ -771,6 +815,7 @@ function resetDemo() {
   state.position = null;
   stopFundingSettlement();
   state.pendingOrders = [];
+  state.tradeHistory = [];
   state.shockMode = false;
   state.margin = 500;
   state.leverage = 10;
@@ -917,6 +962,54 @@ function renderPendingOrders() {
   `).join("");
 }
 
+function renderTradeHistory() {
+  dom.tradeCount.textContent = `${state.tradeHistory.length} 笔`;
+
+  if (state.tradeHistory.length === 0) {
+    dom.tradeHistory.innerHTML = '<div class="empty-state">暂无成交，开仓或平仓后这里会记录价格、手续费和已实现盈亏。</div>';
+    return;
+  }
+
+  dom.tradeHistory.innerHTML = state.tradeHistory.map((trade) => {
+    const actionText = {
+      open: trade.orderType === "limit" ? "限价开仓" : "市价开仓",
+      close: "手动平仓",
+      liquidation: "强制平仓",
+    }[trade.action];
+    const pnlTone = trade.realizedPnl === null
+      ? ""
+      : trade.realizedPnl >= 0
+        ? "text-up"
+        : "text-down";
+    const pnlText = trade.realizedPnl === null
+      ? "-"
+      : `${trade.realizedPnl >= 0 ? "+" : "-"}${formatUsd(Math.abs(trade.realizedPnl))} USDT`;
+
+    return `
+      <article class="trade-row">
+        <span>${trade.time}</span>
+        <strong class="trade-pill ${trade.side === "long" ? "text-up" : "text-down"}">${trade.side === "long" ? "多" : "空"}</strong>
+        <div class="trade-main">
+          <strong>${actionText}</strong>
+          <span>${formatUsd(trade.size, 4)} BTC</span>
+        </div>
+        <div>
+          <span>成交价</span>
+          <strong>$${formatUsd(trade.price)}</strong>
+        </div>
+        <div>
+          <span>费用</span>
+          <strong>${formatUsd(trade.fee)} USDT</strong>
+        </div>
+        <div>
+          <span>已实现盈亏</span>
+          <strong class="${pnlTone}">${pnlText}</strong>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
 function info(label, value, tone = "") {
   return `
     <div class="info">
@@ -991,6 +1084,7 @@ function renderAll() {
   renderMarketFrame();
   renderControls();
   renderPendingOrders();
+  renderTradeHistory();
   renderLogs();
 }
 
