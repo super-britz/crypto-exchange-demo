@@ -9,6 +9,7 @@
 - 开仓、平仓
 - 暴跌行情
 - 强制平仓
+- K 线强平价线
 - 资金费率展示
 - 事件日志
 - TradingView Lightweight Charts K 线
@@ -41,9 +42,10 @@ http://127.0.0.1:5173/
 3. 看右侧盘口持续变化，说明它接了 Binance `btcusdt@depth20@100ms`。
 4. 在下单区选择开多或开空，设置保证金和杠杆。
 5. 点击开仓，观察仓位区出现入场价、标记价、强平价、未实现盈亏。
-6. 点击“暴跌模拟”，临时切到本地压力测试行情，让强平更容易被演示出来。
-7. 如果价格触发强平线，系统会自动强平并写入事件日志。
-8. 也可以点击“手动平仓”观察余额和日志变化。
+6. 看 K 线图上出现 `Liq` 强平价线。
+7. 点击“暴跌模拟”，临时切到本地压力测试行情，让强平更容易被演示出来。
+8. 如果价格触发强平线，系统会自动强平并写入事件日志，同时移除 K 线上的强平价线。
+9. 也可以点击“手动平仓”观察余额和日志变化。
 
 ## 面试可以怎么讲
 
@@ -99,6 +101,10 @@ wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/btcusdt@depth20
 每次行情更新后都会检查是否触发强平。
 
 对应代码：`calcLiquidationPrice()`、`checkLiquidation()`。
+
+开仓后会用 Lightweight Charts 的 `createPriceLine()` 在 K 线上绘制强平价线；平仓或强平后通过 `removePriceLine()` 移除。
+
+对应代码：`syncLiquidationPriceLine()`、`clearLiquidationPriceLine()`。
 
 ## 后续可升级点
 

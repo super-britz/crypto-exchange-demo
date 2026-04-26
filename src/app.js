@@ -4,6 +4,7 @@ import {
   createChart,
   CrosshairMode,
   HistogramSeries,
+  LineStyle,
 } from "lightweight-charts";
 
 const START_PRICE = 68240;
@@ -25,6 +26,7 @@ const DOWN_COLOR = "#ef5350";
 let chartApi;
 let candleSeries;
 let volumeSeries;
+let liquidationPriceLine;
 let marketSocket;
 let reconnectTimer;
 let localStressTimer;
@@ -597,6 +599,44 @@ function updateChartWithCandle(candle) {
   volumeSeries.update(toVolumePoint(candle));
 }
 
+function syncLiquidationPriceLine() {
+  if (!chartReady) return;
+
+  if (!state.position) {
+    clearLiquidationPriceLine();
+    return;
+  }
+
+  const price = state.position.liquidationPrice;
+  const title = `Liq ${formatUsd(price)}`;
+
+  if (!liquidationPriceLine) {
+    liquidationPriceLine = candleSeries.createPriceLine({
+      price,
+      color: "#f5c542",
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      lineVisible: true,
+      title,
+      axisLabelColor: "#f5c542",
+      axisLabelTextColor: "#0c111d",
+    });
+    return;
+  }
+
+  liquidationPriceLine.applyOptions({
+    price,
+    title,
+  });
+}
+
+function clearLiquidationPriceLine() {
+  if (!liquidationPriceLine) return;
+  candleSeries.removePriceLine(liquidationPriceLine);
+  liquidationPriceLine = null;
+}
+
 function renderBook() {
   const book = state.orderBook;
   const maxTotal = Math.max(
@@ -710,6 +750,7 @@ function renderMarketFrame() {
 
   renderBook();
   renderPosition();
+  syncLiquidationPriceLine();
 }
 
 function renderAll() {
