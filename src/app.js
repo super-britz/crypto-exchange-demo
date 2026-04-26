@@ -11,6 +11,9 @@ const START_PRICE = 68240;
 const MAX_CANDLES = 72;
 const INITIAL_BALANCE = 10000;
 const MAINTENANCE_RATE = 0.006;
+const TAKER_FEE_RATE = 0.0004;
+const MAKER_FEE_RATE = 0.0002;
+const FUNDING_SETTLEMENT_MS = 15000;
 const SYMBOL = "BTCUSDT";
 const STREAM_SYMBOL = "btcusdt";
 const DEFAULT_INTERVAL = "1m";
@@ -31,6 +34,7 @@ let liquidationPriceLine;
 let marketSocket;
 let reconnectTimer;
 let localStressTimer;
+let fundingTimer;
 let reconnectAttempts = 0;
 let wsEndpointIndex = 0;
 let marketFrameId = 0;
@@ -227,6 +231,15 @@ function calcPnl(position, markPrice) {
   return (markPrice - position.entryPrice) * position.size * direction;
 }
 
+function calcNotional(size, price) {
+  return size * price;
+}
+
+function calcTradingFee(notional, orderType) {
+  const rate = orderType === "limit" ? MAKER_FEE_RATE : TAKER_FEE_RATE;
+  return notional * rate;
+}
+
 function addLog(message, tone = "info") {
   state.logs = [
     { time: new Date().toLocaleTimeString(), message, tone },
@@ -241,6 +254,44 @@ function requestMarketRender() {
     marketFrameId = 0;
     renderMarketFrame();
   });
+}
+
+function startFundingSettlement() {
+  window.clearInterval(fundingTimer);
+  fundingTimer = window.setInterval(settleFundingFee, FUNDING_SETTLEMENT_MS);
+}
+
+function stopFundingSettlement() {
+  window.clearInterval(fundingTimer);
+  fundingTimer = null;
+}
+
+function settleFundingFee() {
+  if (!state.position || !state.isRunning) return;
+
+  const markPrice = latestPrice();
+  const change = markPrice - previousPrice();
+  const fundingRate = calcFundingRate(markPrice, change) / 100;
+  const notional = calcNotional(state.position.size, markPrice);
+  const direction = state.position.side === "long" ? 1 : -1;
+  const fundingPayment = notional * fundingRate * direction;
+
+  if (Math.abs(fundingPayment) < 0.01) return;
+
+  state.balance -= fundingPayment;
+  state.position.fundingFee += fundingPayment;
+  addLog(
+    `资金费率结算：${state.position.side === "long" ? "多单" : "空单"}${fundingPayment >= 0 ? "支付" : "收取"} ${formatUsd(Math.abs(fundingPayment))} USDT。`,
+    fundingPayment >= 0 ? "danger" : "success",
+  );
+
+  if (state.balance < 0) {
+    state.balance = 0;
+  }
+
+  checkLiquidation();
+  renderMarketFrame();
+  renderControls();
 }
 
 function setStreamStatus(status) {
@@ -525,6 +576,7 @@ async function changeInterval(nextInterval) {
   stopMarketStream();
   stopLocalStressStream();
   clearLiquidationPriceLine();
+  stopFundingSettlement();
   chartReady = false;
   state.interval = nextInterval;
   state.shockMode = false;
@@ -553,19 +605,23 @@ function checkLiquidation() {
   if (!shouldLiquidate) return;
 
   const pnl = calcPnl(state.position, markPrice);
-  state.balance = Math.max(0, state.balance + state.position.margin + pnl);
+  const closeNotional = calcNotional(state.position.size, markPrice);
+  const closeFee = calcTradingFee(closeNotional, "market");
+  state.balance = Math.max(0, state.balance + state.position.margin + pnl - closeFee);
   addLog(
-    `触发强平：${state.position.side === "long" ? "多单" : "空单"}在 ${formatUsd(markPrice)} 被系统平仓。`,
+    `触发强平：${state.position.side === "long" ? "多单" : "空单"}在 ${formatUsd(markPrice)} 被系统平仓，强平手续费 ${formatUsd(closeFee)} USDT。`,
     "danger",
   );
   state.position = null;
   state.shockMode = false;
+  stopFundingSettlement();
   resumeMarket();
 }
 
-function createPositionFromOrder(order, entryPrice) {
+function createPositionFromOrder(order, entryPrice, orderType = "market") {
   const notional = order.margin * order.leverage;
   const size = notional / entryPrice;
+  const openFee = calcTradingFee(notional, orderType);
 
   state.position = {
     side: order.side,
@@ -573,8 +629,15 @@ function createPositionFromOrder(order, entryPrice) {
     size,
     margin: order.margin,
     leverage: order.leverage,
+    openFee,
+    closeFee: 0,
+    fundingFee: 0,
     liquidationPrice: calcLiquidationPrice(order.side, entryPrice, order.leverage),
   };
+
+  state.balance -= openFee;
+  startFundingSettlement();
+  return state.position;
 }
 
 function placeLimitOrder() {
@@ -638,9 +701,9 @@ function checkPendingOrders() {
   if (!shouldFill) return;
 
   state.pendingOrders = [];
-  createPositionFromOrder(order, order.price);
+  const position = createPositionFromOrder(order, order.price, "limit");
   addLog(
-    `${order.side === "long" ? "限价开多" : "限价开空"}成交，成交价 ${formatUsd(order.price)}。`,
+    `${order.side === "long" ? "限价开多" : "限价开空"}成交，成交价 ${formatUsd(order.price)}，开仓手续费 ${formatUsd(position.openFee)} USDT。`,
     "success",
   );
   renderPendingOrders();
@@ -675,9 +738,9 @@ function openPosition() {
   };
 
   state.balance -= state.margin;
-  createPositionFromOrder(order, markPrice);
+  const position = createPositionFromOrder(order, markPrice, "market");
   addLog(
-    `${state.side === "long" ? "市价开多" : "市价开空"} ${formatUsd(state.position.size, 4)} BTC，入场价 ${formatUsd(markPrice)}，${state.leverage}x。`,
+    `${state.side === "long" ? "市价开多" : "市价开空"} ${formatUsd(position.size, 4)} BTC，入场价 ${formatUsd(markPrice)}，开仓手续费 ${formatUsd(position.openFee)} USDT。`,
     "success",
   );
   renderMarketFrame();
@@ -686,13 +749,18 @@ function openPosition() {
 
 function closePosition() {
   if (!state.position) return;
-  const pnl = calcPnl(state.position, latestPrice());
-  state.balance = Math.max(0, state.balance + state.position.margin + pnl);
+  const markPrice = latestPrice();
+  const pnl = calcPnl(state.position, markPrice);
+  const closeNotional = calcNotional(state.position.size, markPrice);
+  const closeFee = calcTradingFee(closeNotional, "market");
+  state.position.closeFee = closeFee;
+  state.balance = Math.max(0, state.balance + state.position.margin + pnl - closeFee);
   addLog(
-    `手动平仓，${pnl >= 0 ? "盈利" : "亏损"} ${formatUsd(Math.abs(pnl))} USDT。`,
+    `手动平仓，${pnl >= 0 ? "盈利" : "亏损"} ${formatUsd(Math.abs(pnl))} USDT，平仓手续费 ${formatUsd(closeFee)} USDT。`,
     pnl >= 0 ? "success" : "danger",
   );
   state.position = null;
+  stopFundingSettlement();
   renderMarketFrame();
   renderControls();
 }
@@ -701,6 +769,7 @@ function resetDemo() {
   state.candles = createCandles(state.interval);
   state.balance = INITIAL_BALANCE;
   state.position = null;
+  stopFundingSettlement();
   state.pendingOrders = [];
   state.shockMode = false;
   state.margin = 500;
@@ -798,6 +867,7 @@ function renderPosition() {
 
   const markPrice = latestPrice();
   const pnl = calcPnl(position, markPrice);
+  const netPnl = pnl - position.openFee - position.closeFee - position.fundingFee;
   const marginRatio = Math.max(0, ((position.margin + pnl) / position.margin) * 100);
   dom.closeButton.disabled = false;
   dom.openButton.disabled = true;
@@ -811,6 +881,9 @@ function renderPosition() {
     ${info("杠杆", `${position.leverage}x`)}
     ${info("仓位数量", `${formatUsd(position.size, 4)} BTC`)}
     ${info("未实现盈亏", `${pnl >= 0 ? "+" : "-"}${formatUsd(Math.abs(pnl))} USDT`, pnl >= 0 ? "up" : "down")}
+    ${info("累计手续费", `${formatUsd(position.openFee + position.closeFee)} USDT`, "danger")}
+    ${info("资金费累计", `${position.fundingFee >= 0 ? "-" : "+"}${formatUsd(Math.abs(position.fundingFee))} USDT`, position.fundingFee <= 0 ? "up" : "down")}
+    ${info("预估净盈亏", `${netPnl >= 0 ? "+" : "-"}${formatUsd(Math.abs(netPnl))} USDT`, netPnl >= 0 ? "up" : "down")}
     <div class="risk-meter">
       <div>保证金率</div>
       <strong>${formatUsd(marginRatio, 1)}%</strong>

@@ -12,7 +12,7 @@
 - 暴跌行情
 - 强制平仓
 - K 线强平价线
-- 资金费率展示
+- 手续费与资金费率结算
 - 事件日志
 - TradingView Lightweight Charts K 线
 
@@ -46,10 +46,11 @@ http://127.0.0.1:5173/
 5. 在下单区选择市价单，点击开仓，观察仓位区出现入场价、标记价、强平价、未实现盈亏。
 6. 切到限价单，输入委托价，点击挂单，观察“当前委托”区域。
 7. 等行情到价自动成交，或者点击撤单释放保证金。
-8. 成交后看 K 线图上出现 `Liq` 强平价线。
-9. 点击“暴跌模拟”，临时切到本地压力测试行情，让强平更容易被演示出来。
-10. 如果价格触发强平线，系统会自动强平并写入事件日志，同时移除 K 线上的强平价线。
-11. 也可以点击“手动平仓”观察余额和日志变化。
+8. 成交后看 K 线图上出现 `Liq` 强平价线，仓位区展示累计手续费、资金费累计、预估净盈亏。
+9. 等待资金费率模拟结算，观察事件日志里的资金费支付或收取记录。
+10. 点击“暴跌模拟”，临时切到本地压力测试行情，让强平更容易被演示出来。
+11. 如果价格触发强平线，系统会自动强平并写入事件日志，同时移除 K 线上的强平价线。
+12. 也可以点击“手动平仓”观察余额和日志变化。
 
 ## 面试可以怎么讲
 
@@ -95,7 +96,16 @@ wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/btcusdt@depth20
 
 市价单会按当前标记价立即成交。开仓时根据保证金和杠杆计算名义价值，再用入场价计算仓位数量。平仓时根据当前标记价计算盈亏，并回到账户余额。
 
-对应代码：`openPosition()`、`closePosition()`、`calcPnl()`。
+开仓和平仓都会扣简化手续费：
+
+```text
+taker fee = 名义价值 * 0.04%
+maker fee = 名义价值 * 0.02%
+```
+
+市价单按 taker 费率计算，限价成交按 maker 费率计算。
+
+对应代码：`openPosition()`、`closePosition()`、`calcPnl()`、`calcTradingFee()`。
 
 ### 限价单
 
@@ -109,6 +119,18 @@ wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/btcusdt@depth20
 到价后挂单转成仓位；撤单会释放保证金。
 
 对应代码：`placeLimitOrder()`、`checkPendingOrders()`、`cancelOrder()`。
+
+### 资金费率
+
+页面顶部展示模拟资金费率。持仓后，每 15 秒做一次本地模拟结算：
+
+```text
+资金费 = 仓位名义价值 * 资金费率 * 多空方向
+```
+
+正资金费率下，多单支付、空单收取；负资金费率下反过来。仓位区会展示资金费累计和预估净盈亏。
+
+对应代码：`settleFundingFee()`、`startFundingSettlement()`、`stopFundingSettlement()`。
 
 ### 强制平仓
 
@@ -131,6 +153,6 @@ wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/btcusdt@depth20
 
 - 把盘口计算放进 Web Worker。
 - 增加虚拟列表和批量更新策略。
-- 增加委托订单、成交记录和资金费率结算。
+- 增加成交记录和已实现盈亏列表。
 - 接入真实 TradingView 时间粒度切换，比如 1m / 5m / 15m。
 - 断线重连时增加指数退避和最大重试次数。
