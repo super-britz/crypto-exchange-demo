@@ -370,6 +370,82 @@ h1 {
   background: #141d2c;
 }
 
+.pending-orders {
+  margin: 14px 12px 0;
+  border-top: 1px solid #1e293b;
+  padding-top: 12px;
+}
+
+.mini-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #dce6f5;
+  font-size: 13px;
+}
+
+.mini-title span {
+  display: inline-flex;
+  min-width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #1c283b;
+  color: #8b98ae;
+  font-size: 12px;
+}
+
+.pending-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pending-card {
+  border: 1px solid #26344a;
+  border-radius: 8px;
+  background: #0c1320;
+  padding: 10px;
+}
+
+.pending-card header,
+.pending-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pending-card header {
+  margin-bottom: 8px;
+}
+
+.pending-card strong {
+  font-size: 13px;
+}
+
+.pending-card small,
+.empty-mini {
+  color: #8392aa;
+  font-size: 12px;
+}
+
+.pending-card footer {
+  margin-top: 8px;
+}
+
+.cancel-order {
+  min-height: 28px;
+  border: 1px solid #34445e;
+  border-radius: 6px;
+  background: #141d2c;
+  color: #dce6f5;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.48;

@@ -47,6 +47,7 @@ const state = {
   limitPrice: START_PRICE,
   balance: INITIAL_BALANCE,
   position: null,
+  pendingOrders: [],
   orderBook: createOrderBook(START_PRICE),
   streamStatus: "connecting",
   usingRealMarket: false,
@@ -83,6 +84,8 @@ const dom = {
   notionalText: document.querySelector("#notionalText"),
   openButton: document.querySelector("#openButton"),
   closeButton: document.querySelector("#closeButton"),
+  pendingCount: document.querySelector("#pendingCount"),
+  pendingOrders: document.querySelector("#pendingOrders"),
   positionContent: document.querySelector("#positionContent"),
   logs: document.querySelector("#logs"),
 };
@@ -360,6 +363,7 @@ function tick() {
   ];
   state.orderBook = createOrderBook(close);
 
+  checkPendingOrders();
   checkLiquidation();
   updateChartWithCandle(nextCandle);
   requestMarketRender();
@@ -439,6 +443,7 @@ function connectMarketStream() {
       };
     }
 
+    checkPendingOrders();
     checkLiquidation();
     requestMarketRender();
   });
@@ -518,9 +523,102 @@ function checkLiquidation() {
   resumeMarket();
 }
 
+function createPositionFromOrder(order, entryPrice) {
+  const notional = order.margin * order.leverage;
+  const size = notional / entryPrice;
+
+  state.position = {
+    side: order.side,
+    entryPrice,
+    size,
+    margin: order.margin,
+    leverage: order.leverage,
+    liquidationPrice: calcLiquidationPrice(order.side, entryPrice, order.leverage),
+  };
+}
+
+function placeLimitOrder() {
+  if (state.position) {
+    addLog("已有仓位，请先平仓再提交限价单。", "danger");
+    return;
+  }
+
+  if (state.pendingOrders.length > 0) {
+    addLog("已有挂单，请先撤单或等待成交。", "danger");
+    return;
+  }
+
+  if (state.margin > state.balance) {
+    addLog("保证金超过可用余额，无法挂单。", "danger");
+    return;
+  }
+
+  const order = {
+    id: Date.now(),
+    side: state.side,
+    price: state.limitPrice,
+    margin: state.margin,
+    leverage: state.leverage,
+    createdAt: new Date().toLocaleTimeString(),
+  };
+
+  state.balance -= order.margin;
+  state.pendingOrders = [order];
+  addLog(
+    `${order.side === "long" ? "限价开多" : "限价开空"}挂单 ${formatUsd(order.price)}，保证金 ${formatUsd(order.margin)} USDT。`,
+    "info",
+  );
+  renderMarketFrame();
+  renderControls();
+  renderPendingOrders();
+}
+
+function cancelOrder(orderId) {
+  const order = state.pendingOrders.find((item) => item.id === orderId);
+  if (!order) return;
+
+  state.pendingOrders = state.pendingOrders.filter((item) => item.id !== orderId);
+  state.balance += order.margin;
+  addLog(`已撤销限价单，释放保证金 ${formatUsd(order.margin)} USDT。`, "info");
+  renderMarketFrame();
+  renderControls();
+  renderPendingOrders();
+}
+
+function checkPendingOrders() {
+  if (state.position || state.pendingOrders.length === 0) return;
+
+  const markPrice = latestPrice();
+  const order = state.pendingOrders[0];
+  const shouldFill =
+    order.side === "long"
+      ? markPrice <= order.price
+      : markPrice >= order.price;
+
+  if (!shouldFill) return;
+
+  state.pendingOrders = [];
+  createPositionFromOrder(order, order.price);
+  addLog(
+    `${order.side === "long" ? "限价开多" : "限价开空"}成交，成交价 ${formatUsd(order.price)}。`,
+    "success",
+  );
+  renderPendingOrders();
+}
+
 function openPosition() {
   if (state.position) {
     addLog("已有仓位，请先平仓再开新仓。", "danger");
+    return;
+  }
+
+  if (state.orderType === "limit") {
+    placeLimitOrder();
+    return;
+  }
+
+  if (state.pendingOrders.length > 0) {
+    addLog("已有挂单，请先撤单或等待成交。", "danger");
     return;
   }
 
@@ -530,27 +628,16 @@ function openPosition() {
   }
 
   const markPrice = latestPrice();
-  const entryPrice =
-    state.orderType === "market"
-      ? markPrice
-      : state.side === "long"
-        ? Math.min(state.limitPrice, markPrice)
-        : Math.max(state.limitPrice, markPrice);
-  const notional = state.margin * state.leverage;
-  const size = notional / entryPrice;
-
-  state.position = {
+  const order = {
     side: state.side,
-    entryPrice,
-    size,
     margin: state.margin,
     leverage: state.leverage,
-    liquidationPrice: calcLiquidationPrice(state.side, entryPrice, state.leverage),
   };
 
   state.balance -= state.margin;
+  createPositionFromOrder(order, markPrice);
   addLog(
-    `${state.side === "long" ? "开多" : "开空"} ${formatUsd(size, 4)} BTC，入场价 ${formatUsd(entryPrice)}，${state.leverage}x。`,
+    `${state.side === "long" ? "市价开多" : "市价开空"} ${formatUsd(state.position.size, 4)} BTC，入场价 ${formatUsd(markPrice)}，${state.leverage}x。`,
     "success",
   );
   renderMarketFrame();
@@ -574,6 +661,7 @@ function resetDemo() {
   state.candles = createCandles();
   state.balance = INITIAL_BALANCE;
   state.position = null;
+  state.pendingOrders = [];
   state.shockMode = false;
   state.margin = 500;
   state.leverage = 10;
@@ -664,7 +752,7 @@ function renderPosition() {
     dom.positionContent.className = "empty-state";
     dom.positionContent.innerHTML = "暂无仓位，开仓后这里会展示强平价和实时盈亏。";
     dom.closeButton.disabled = true;
-    dom.openButton.disabled = false;
+    dom.openButton.disabled = state.pendingOrders.length > 0;
     return;
   }
 
@@ -689,6 +777,31 @@ function renderPosition() {
       <span style="width:${Math.min(100, marginRatio)}%"></span>
     </div>
   `;
+}
+
+function renderPendingOrders() {
+  dom.pendingCount.textContent = String(state.pendingOrders.length);
+
+  if (state.pendingOrders.length === 0) {
+    dom.pendingOrders.innerHTML = '<div class="empty-mini">暂无挂单</div>';
+    return;
+  }
+
+  dom.pendingOrders.innerHTML = state.pendingOrders.map((order) => `
+    <article class="pending-card">
+      <header>
+        <strong class="${order.side === "long" ? "text-up" : "text-down"}">
+          ${order.side === "long" ? "限价开多" : "限价开空"}
+        </strong>
+        <small>${order.createdAt}</small>
+      </header>
+      <small>委托价 $${formatUsd(order.price)} · ${order.leverage}x · 保证金 ${formatUsd(order.margin)} USDT</small>
+      <footer>
+        <small>${order.side === "long" ? "价格小于等于委托价成交" : "价格大于等于委托价成交"}</small>
+        <button class="cancel-order" data-order-id="${order.id}">撤单</button>
+      </footer>
+    </article>
+  `).join("");
 }
 
 function info(label, value, tone = "") {
@@ -720,7 +833,11 @@ function renderControls() {
   dom.balanceText.textContent = `${formatUsd(state.balance)} USDT`;
   dom.notionalText.textContent = `${formatUsd(state.margin * state.leverage)} USDT`;
   dom.openButton.className = `submit ${state.side}`;
-  dom.openButton.textContent = state.side === "long" ? "开多 BTC" : "开空 BTC";
+  dom.openButton.textContent =
+    state.orderType === "limit"
+      ? `${state.side === "long" ? "挂多单" : "挂空单"} BTC`
+      : `${state.side === "long" ? "开多" : "开空"} BTC`;
+  dom.openButton.disabled = Boolean(state.position) || state.pendingOrders.length > 0;
 
   dom.orderTypeGroup.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.dataset.orderType === state.orderType);
@@ -757,6 +874,7 @@ function renderAll() {
   setChartData();
   renderMarketFrame();
   renderControls();
+  renderPendingOrders();
   renderLogs();
 }
 
@@ -805,6 +923,11 @@ dom.limitPriceInput.addEventListener("input", (event) => {
 
 dom.openButton.addEventListener("click", openPosition);
 dom.closeButton.addEventListener("click", closePosition);
+dom.pendingOrders.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-order-id]");
+  if (!button) return;
+  cancelOrder(Number(button.dataset.orderId));
+});
 window.addEventListener("resize", () => {
   const rect = dom.chart.getBoundingClientRect();
   chartApi.resize(Math.max(320, Math.floor(rect.width)), Math.max(320, Math.floor(rect.height)));
