@@ -126,6 +126,29 @@ h1 {
   color: #ffb0ae;
 }
 
+.stream-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid #26344a;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #0c1320;
+  color: #8b98ae;
+  font-size: 12px;
+}
+
+.stream-status.connected {
+  border-color: rgba(22, 199, 132, 0.35);
+  color: #16c784;
+}
+
+.stream-status.offline,
+.stream-status.error {
+  border-color: rgba(239, 83, 80, 0.45);
+  color: #ffb0ae;
+}
+
 .trading-grid {
   display: grid;
   grid-template-columns: minmax(520px, 1fr) 300px 320px;

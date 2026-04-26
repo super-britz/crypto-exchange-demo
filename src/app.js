@@ -10,17 +10,32 @@ const START_PRICE = 68240;
 const MAX_CANDLES = 72;
 const INITIAL_BALANCE = 10000;
 const MAINTENANCE_RATE = 0.006;
+const SYMBOL = "BTCUSDT";
+const STREAM_SYMBOL = "btcusdt";
+const KLINE_INTERVAL = "1m";
+const BINANCE_REST_BASE = "https://data-api.binance.vision";
+const STREAM_PATH = `${STREAM_SYMBOL}@kline_${KLINE_INTERVAL}/${STREAM_SYMBOL}@depth20@100ms`;
+const BINANCE_WS_URLS = [
+  `wss://data-stream.binance.vision/stream?streams=${STREAM_PATH}`,
+  `wss://stream.binance.com:9443/stream?streams=${STREAM_PATH}`,
+];
 const UP_COLOR = "#16c784";
 const DOWN_COLOR = "#ef5350";
 
 let chartApi;
 let candleSeries;
 let volumeSeries;
+let marketSocket;
+let reconnectTimer;
+let localStressTimer;
+let reconnectAttempts = 0;
+let wsEndpointIndex = 0;
 
 const state = {
   candles: createCandles(),
   isRunning: true,
   shockMode: false,
+  fallbackMode: false,
   orderType: "market",
   side: "long",
   leverage: 10,
@@ -28,6 +43,9 @@ const state = {
   limitPrice: START_PRICE,
   balance: INITIAL_BALANCE,
   position: null,
+  orderBook: createOrderBook(START_PRICE),
+  streamStatus: "connecting",
+  usingRealMarket: false,
   logs: [
     {
       time: new Date().toLocaleTimeString(),
@@ -35,7 +53,6 @@ const state = {
       tone: "info",
     },
   ],
-  timer: null,
 };
 
 const dom = {
@@ -46,6 +63,7 @@ const dom = {
   runToggle: document.querySelector("#runToggle"),
   shockToggle: document.querySelector("#shockToggle"),
   resetButton: document.querySelector("#resetButton"),
+  streamStatus: document.querySelector("#streamStatus"),
   chart: document.querySelector("#klineChart"),
   asks: document.querySelector("#asks"),
   bids: document.querySelector("#bids"),
@@ -126,6 +144,41 @@ function createOrderBook(price) {
   };
 }
 
+function normalizeDepth(side) {
+  let total = 0;
+  return side.map(([price, amount]) => {
+    const nextAmount = Number(amount);
+    total += nextAmount;
+    return {
+      price: Number(price),
+      amount: nextAmount,
+      total,
+    };
+  });
+}
+
+function mapBinanceKline(item) {
+  return {
+    time: Number(item[0]),
+    open: Number(item[1]),
+    high: Number(item[2]),
+    low: Number(item[3]),
+    close: Number(item[4]),
+    volume: Number(item[5]),
+  };
+}
+
+function mapStreamKline(kline) {
+  return {
+    time: Number(kline.t),
+    open: Number(kline.o),
+    high: Number(kline.h),
+    low: Number(kline.l),
+    close: Number(kline.c),
+    volume: Number(kline.v),
+  };
+}
+
 function latestPrice() {
   return state.candles[state.candles.length - 1].close;
 }
@@ -157,6 +210,20 @@ function addLog(message, tone = "info") {
     ...state.logs,
   ].slice(0, 8);
   renderLogs();
+}
+
+function setStreamStatus(status) {
+  state.streamStatus = status;
+  const labels = {
+    connecting: "Binance 连接中",
+    connected: "Binance 实时行情",
+    reconnecting: "Binance 重连中",
+    offline: "已暂停",
+    stress: "本地暴跌模拟",
+    error: "连接失败，使用本地模拟",
+  };
+  dom.streamStatus.textContent = labels[status] ?? status;
+  dom.streamStatus.className = `stream-status ${status}`;
 }
 
 function toChartTime(time) {
@@ -266,26 +333,153 @@ function tick() {
   const high = Math.max(last.close, close) + Math.random() * volatility * 0.18;
   const low = Math.min(last.close, close) - Math.random() * volatility * 0.18;
 
+  const nextCandle = {
+    time: Date.now(),
+    open: last.close,
+    high,
+    low,
+    close,
+    volume: 60 + Math.random() * (state.shockMode ? 520 : 160),
+  };
+
   state.candles = [
     ...state.candles.slice(-(MAX_CANDLES - 1)),
-    {
-      time: Date.now(),
-      open: last.close,
-      high,
-      low,
-      close,
-      volume: 60 + Math.random() * (state.shockMode ? 520 : 160),
-    },
+    nextCandle,
   ];
+  state.orderBook = createOrderBook(close);
 
   checkLiquidation();
   render();
 }
 
-function scheduleSocket() {
-  window.clearInterval(state.timer);
-  if (!state.isRunning) return;
-  state.timer = window.setInterval(tick, state.shockMode ? 650 : 1000);
+function startLocalStressStream() {
+  stopMarketStream();
+  window.clearInterval(localStressTimer);
+  setStreamStatus(state.fallbackMode ? "error" : "stress");
+  localStressTimer = window.setInterval(tick, state.shockMode ? 650 : 1000);
+}
+
+function stopLocalStressStream() {
+  window.clearInterval(localStressTimer);
+  localStressTimer = null;
+}
+
+function stopMarketStream() {
+  window.clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (marketSocket) {
+    marketSocket.manualClose = true;
+    marketSocket.close();
+    marketSocket = null;
+  }
+}
+
+async function loadInitialCandles() {
+  try {
+    const response = await fetch(
+      `${BINANCE_REST_BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${KLINE_INTERVAL}&limit=${MAX_CANDLES}`,
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    state.candles = data.map(mapBinanceKline);
+    state.limitPrice = latestPrice();
+    state.orderBook = createOrderBook(latestPrice());
+  } catch (error) {
+    console.warn("Failed to load Binance historical klines, using fallback data.", error);
+    addLog("无法加载 Binance 历史 K 线，暂用本地初始数据。", "danger");
+  }
+}
+
+function connectMarketStream() {
+  if (!state.isRunning || state.shockMode) return;
+  stopLocalStressStream();
+  stopMarketStream();
+  state.fallbackMode = false;
+  setStreamStatus(reconnectAttempts > 0 ? "reconnecting" : "connecting");
+
+  marketSocket = new WebSocket(BINANCE_WS_URLS[wsEndpointIndex]);
+
+  marketSocket.addEventListener("open", () => {
+    state.usingRealMarket = true;
+    reconnectAttempts = 0;
+    setStreamStatus("connected");
+    addLog("Binance WebSocket 已连接：K线 + depth20 盘口。", "success");
+  });
+
+  marketSocket.addEventListener("message", (event) => {
+    const payload = JSON.parse(event.data);
+    const stream = payload.stream;
+    const data = payload.data;
+
+    if (stream.endsWith(`@kline_${KLINE_INTERVAL}`)) {
+      upsertStreamCandle(mapStreamKline(data.k));
+    }
+
+    if (stream.endsWith("@depth20@100ms")) {
+      state.orderBook = {
+        asks: normalizeDepth(data.asks),
+        bids: normalizeDepth(data.bids),
+      };
+    }
+
+    checkLiquidation();
+    render();
+  });
+
+  marketSocket.addEventListener("error", () => {
+    setStreamStatus("error");
+  });
+
+  marketSocket.addEventListener("close", (event) => {
+    if (event.currentTarget.manualClose) return;
+    marketSocket = null;
+    state.usingRealMarket = false;
+    if (!state.isRunning || state.shockMode) return;
+    reconnectAttempts += 1;
+    wsEndpointIndex = (wsEndpointIndex + 1) % BINANCE_WS_URLS.length;
+
+    if (reconnectAttempts >= 6) {
+      state.fallbackMode = true;
+      addLog("Binance WebSocket 暂不可用，已降级为本地模拟行情。", "danger");
+      startLocalStressStream();
+      render();
+      return;
+    }
+
+    setStreamStatus("reconnecting");
+    reconnectTimer = window.setTimeout(connectMarketStream, 1200 + reconnectAttempts * 600);
+  });
+}
+
+function upsertStreamCandle(nextCandle) {
+  const last = state.candles[state.candles.length - 1];
+  if (last && last.time === nextCandle.time) {
+    state.candles = [...state.candles.slice(0, -1), nextCandle];
+    return;
+  }
+  state.candles = [...state.candles.slice(-(MAX_CANDLES - 1)), nextCandle];
+  state.limitPrice = nextCandle.close;
+}
+
+function resumeMarket() {
+  if (!state.isRunning) {
+    stopMarketStream();
+    stopLocalStressStream();
+    state.fallbackMode = false;
+    setStreamStatus("offline");
+    return;
+  }
+
+  if (state.shockMode) {
+    startLocalStressStream();
+    return;
+  }
+
+  reconnectAttempts = 0;
+  wsEndpointIndex = 0;
+  connectMarketStream();
 }
 
 function checkLiquidation() {
@@ -306,7 +500,7 @@ function checkLiquidation() {
   );
   state.position = null;
   state.shockMode = false;
-  scheduleSocket();
+  resumeMarket();
 }
 
 function openPosition() {
@@ -369,8 +563,9 @@ function resetDemo() {
   state.orderType = "market";
   state.side = "long";
   state.limitPrice = latestPrice();
+  state.orderBook = createOrderBook(latestPrice());
   addLog("账户和行情已重置。", "info");
-  scheduleSocket();
+  resumeMarket();
   render();
 }
 
@@ -381,7 +576,7 @@ function renderKline() {
 }
 
 function renderBook() {
-  const book = createOrderBook(latestPrice());
+  const book = state.orderBook;
   const maxTotal = Math.max(
     ...book.asks.map((item) => item.total),
     ...book.bids.map((item) => item.total),
@@ -500,14 +695,14 @@ function render() {
 
 dom.runToggle.addEventListener("click", () => {
   state.isRunning = !state.isRunning;
-  scheduleSocket();
+  resumeMarket();
   renderControls();
 });
 
 dom.shockToggle.addEventListener("click", () => {
   state.shockMode = !state.shockMode;
   addLog(state.shockMode ? "暴跌模拟已开启，行情波动加速。" : "暴跌模拟已关闭。", "info");
-  scheduleSocket();
+  resumeMarket();
   renderControls();
 });
 
@@ -550,5 +745,7 @@ window.addEventListener("resize", () => {
 
 state.limitPrice = latestPrice();
 initChart();
-scheduleSocket();
-render();
+loadInitialCandles().finally(() => {
+  resumeMarket();
+  render();
+});
