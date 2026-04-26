@@ -100,6 +100,34 @@ h1 {
   margin-bottom: 12px;
 }
 
+.account-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.account-item {
+  min-height: 68px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: rgba(13, 19, 31, 0.9);
+  padding: 12px;
+}
+
+.account-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: #8392aa;
+  font-size: 12px;
+}
+
+.account-item strong {
+  color: #e6edf7;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
 .icon-button,
 .tool-button {
   display: inline-flex;
@@ -674,6 +702,10 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .account-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .trading-grid {
     grid-template-columns: 1fr 320px;
     grid-template-rows: 480px auto auto auto auto;
@@ -716,6 +748,7 @@ button:disabled {
   }
 
   .market-strip,
+  .account-strip,
   .trading-grid,
   .position-grid {
     grid-template-columns: 1fr;

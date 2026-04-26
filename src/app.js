@@ -55,6 +55,9 @@ const state = {
   position: null,
   pendingOrders: [],
   tradeHistory: [],
+  realizedPnl: 0,
+  totalFees: 0,
+  totalFundingFee: 0,
   orderBook: createOrderBook(START_PRICE),
   streamStatus: "connecting",
   usingRealMarket: false,
@@ -88,6 +91,13 @@ const dom = {
   marginInput: document.querySelector("#marginInput"),
   leverageInput: document.querySelector("#leverageInput"),
   leverageLabel: document.querySelector("#leverageLabel"),
+  walletBalance: document.querySelector("#walletBalance"),
+  availableBalance: document.querySelector("#availableBalance"),
+  usedMargin: document.querySelector("#usedMargin"),
+  unrealizedPnl: document.querySelector("#unrealizedPnl"),
+  realizedPnl: document.querySelector("#realizedPnl"),
+  totalFees: document.querySelector("#totalFees"),
+  fundingFeeNet: document.querySelector("#fundingFeeNet"),
   balanceText: document.querySelector("#balanceText"),
   notionalText: document.querySelector("#notionalText"),
   openButton: document.querySelector("#openButton"),
@@ -243,6 +253,35 @@ function calcTradingFee(notional, orderType) {
   return notional * rate;
 }
 
+function calcUsedMargin() {
+  const positionMargin = state.position ? state.position.margin : 0;
+  const pendingMargin = state.pendingOrders.reduce((sum, order) => sum + order.margin, 0);
+  return positionMargin + pendingMargin;
+}
+
+function getAccountSnapshot(markPrice = latestPrice()) {
+  const usedMargin = calcUsedMargin();
+  const unrealizedPnl = state.position ? calcPnl(state.position, markPrice) : 0;
+  const walletBalance = state.balance + usedMargin;
+  const totalEquity = walletBalance + unrealizedPnl;
+
+  return {
+    availableBalance: state.balance,
+    usedMargin,
+    unrealizedPnl,
+    walletBalance,
+    totalEquity,
+    realizedPnl: state.realizedPnl,
+    totalFees: state.totalFees,
+    totalFundingFee: state.totalFundingFee,
+  };
+}
+
+function formatSignedUsd(value) {
+  const sign = value >= 0 ? "+" : "-";
+  return `${sign}${formatUsd(Math.abs(value))} USDT`;
+}
+
 function addLog(message, tone = "info") {
   state.logs = [
     { time: new Date().toLocaleTimeString(), message, tone },
@@ -295,6 +334,7 @@ function settleFundingFee() {
 
   state.balance -= fundingPayment;
   state.position.fundingFee += fundingPayment;
+  state.totalFundingFee += fundingPayment;
   addLog(
     `资金费率结算：${state.position.side === "long" ? "多单" : "空单"}${fundingPayment >= 0 ? "支付" : "收取"} ${formatUsd(Math.abs(fundingPayment))} USDT。`,
     fundingPayment >= 0 ? "danger" : "success",
@@ -623,6 +663,8 @@ function checkLiquidation() {
   const closeFee = calcTradingFee(closeNotional, "market");
   const netPnl = pnl - state.position.openFee - closeFee - state.position.fundingFee;
   state.position.closeFee = closeFee;
+  state.realizedPnl += netPnl;
+  state.totalFees += closeFee;
   state.balance = Math.max(0, state.balance + state.position.margin + pnl - closeFee);
   addTrade({
     action: "liquidation",
@@ -661,6 +703,7 @@ function createPositionFromOrder(order, entryPrice, orderType = "market") {
   };
 
   state.balance -= openFee;
+  state.totalFees += openFee;
   addTrade({
     action: "open",
     side: order.side,
@@ -789,6 +832,8 @@ function closePosition() {
   const closeFee = calcTradingFee(closeNotional, "market");
   state.position.closeFee = closeFee;
   const netPnl = pnl - state.position.openFee - closeFee - state.position.fundingFee;
+  state.realizedPnl += netPnl;
+  state.totalFees += closeFee;
   state.balance = Math.max(0, state.balance + state.position.margin + pnl - closeFee);
   addTrade({
     action: "close",
@@ -816,6 +861,9 @@ function resetDemo() {
   stopFundingSettlement();
   state.pendingOrders = [];
   state.tradeHistory = [];
+  state.realizedPnl = 0;
+  state.totalFees = 0;
+  state.totalFundingFee = 0;
   state.shockMode = false;
   state.margin = 500;
   state.leverage = 10;
@@ -1010,6 +1058,19 @@ function renderTradeHistory() {
   }).join("");
 }
 
+function renderAccount(snapshot = getAccountSnapshot()) {
+  dom.walletBalance.textContent = `${formatUsd(snapshot.walletBalance)} USDT`;
+  dom.availableBalance.textContent = `${formatUsd(snapshot.availableBalance)} USDT`;
+  dom.usedMargin.textContent = `${formatUsd(snapshot.usedMargin)} USDT`;
+  dom.unrealizedPnl.textContent = formatSignedUsd(snapshot.unrealizedPnl);
+  dom.unrealizedPnl.className = snapshot.unrealizedPnl >= 0 ? "text-up" : "text-down";
+  dom.realizedPnl.textContent = formatSignedUsd(snapshot.realizedPnl);
+  dom.realizedPnl.className = snapshot.realizedPnl >= 0 ? "text-up" : "text-down";
+  dom.totalFees.textContent = `${formatUsd(snapshot.totalFees)} USDT`;
+  dom.fundingFeeNet.textContent = formatSignedUsd(-snapshot.totalFundingFee);
+  dom.fundingFeeNet.className = snapshot.totalFundingFee <= 0 ? "text-up" : "text-down";
+}
+
 function info(label, value, tone = "") {
   return `
     <div class="info">
@@ -1036,7 +1097,7 @@ function renderControls() {
   dom.marginInput.value = state.margin;
   dom.leverageInput.value = state.leverage;
   dom.limitPriceInput.value = state.limitPrice.toFixed(1);
-  dom.balanceText.textContent = `${formatUsd(state.balance)} USDT`;
+  dom.balanceText.textContent = `${formatUsd(getAccountSnapshot().availableBalance)} USDT`;
   dom.notionalText.textContent = `${formatUsd(state.margin * state.leverage)} USDT`;
   dom.openButton.className = `submit ${state.side}`;
   dom.openButton.textContent =
@@ -1063,7 +1124,7 @@ function renderMarketFrame() {
   const markPrice = latestPrice();
   const change = markPrice - previousPrice();
   const fundingRate = calcFundingRate(markPrice, change);
-  const pnl = state.position ? calcPnl(state.position, markPrice) : 0;
+  const account = getAccountSnapshot(markPrice);
 
   dom.markPrice.textContent = `$${formatUsd(markPrice)}`;
   dom.markPrice.className = change >= 0 ? "text-up" : "text-down";
@@ -1072,9 +1133,10 @@ function renderMarketFrame() {
   dom.priceChange.className = change >= 0 ? "text-up" : "text-down";
   dom.fundingRate.textContent = `${fundingRate >= 0 ? "+" : ""}${fundingRate.toFixed(4)}%`;
   dom.fundingRate.className = fundingRate >= 0 ? "text-up" : "text-down";
-  dom.equity.textContent = `${formatUsd(state.balance + pnl)} USDT`;
+  dom.equity.textContent = `${formatUsd(account.totalEquity)} USDT`;
 
   renderBook();
+  renderAccount(account);
   renderPosition();
   syncLiquidationPriceLine();
 }
