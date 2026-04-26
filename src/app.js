@@ -13,13 +13,14 @@ const INITIAL_BALANCE = 10000;
 const MAINTENANCE_RATE = 0.006;
 const SYMBOL = "BTCUSDT";
 const STREAM_SYMBOL = "btcusdt";
-const KLINE_INTERVAL = "1m";
+const DEFAULT_INTERVAL = "1m";
+const INTERVAL_MS = {
+  "1m": 60000,
+  "5m": 5 * 60000,
+  "15m": 15 * 60000,
+  "1h": 60 * 60000,
+};
 const BINANCE_REST_BASE = "https://data-api.binance.vision";
-const STREAM_PATH = `${STREAM_SYMBOL}@kline_${KLINE_INTERVAL}/${STREAM_SYMBOL}@depth20@100ms`;
-const BINANCE_WS_URLS = [
-  `wss://data-stream.binance.vision/stream?streams=${STREAM_PATH}`,
-  `wss://stream.binance.com:9443/stream?streams=${STREAM_PATH}`,
-];
 const UP_COLOR = "#16c784";
 const DOWN_COLOR = "#ef5350";
 
@@ -36,7 +37,8 @@ let marketFrameId = 0;
 let chartReady = false;
 
 const state = {
-  candles: createCandles(),
+  candles: createCandles(DEFAULT_INTERVAL),
+  interval: DEFAULT_INTERVAL,
   isRunning: true,
   shockMode: false,
   fallbackMode: false,
@@ -69,6 +71,7 @@ const dom = {
   shockToggle: document.querySelector("#shockToggle"),
   resetButton: document.querySelector("#resetButton"),
   streamStatus: document.querySelector("#streamStatus"),
+  intervalTabs: document.querySelector("#intervalTabs"),
   chart: document.querySelector("#klineChart"),
   asks: document.querySelector("#asks"),
   bids: document.querySelector("#bids"),
@@ -97,9 +100,10 @@ function formatUsd(value, digits = 2) {
   });
 }
 
-function createCandles() {
+function createCandles(interval = DEFAULT_INTERVAL) {
   const candles = [];
   let price = START_PRICE;
+  const intervalMs = INTERVAL_MS[interval] ?? INTERVAL_MS[DEFAULT_INTERVAL];
 
   for (let i = 0; i < MAX_CANDLES; i += 1) {
     const open = price;
@@ -108,7 +112,7 @@ function createCandles() {
     const high = Math.max(open, close) + Math.random() * 180;
     const low = Math.min(open, close) - Math.random() * 180;
     candles.push({
-      time: Date.now() - (MAX_CANDLES - i) * 60000,
+      time: Date.now() - (MAX_CANDLES - i) * intervalMs,
       open,
       high,
       low,
@@ -119,6 +123,18 @@ function createCandles() {
   }
 
   return candles;
+}
+
+function getStreamPath() {
+  return `${STREAM_SYMBOL}@kline_${state.interval}/${STREAM_SYMBOL}@depth20@100ms`;
+}
+
+function getBinanceWsUrls() {
+  const streamPath = getStreamPath();
+  return [
+    `wss://data-stream.binance.vision/stream?streams=${streamPath}`,
+    `wss://stream.binance.com:9443/stream?streams=${streamPath}`,
+  ];
 }
 
 function createOrderBook(price) {
@@ -349,7 +365,7 @@ function tick() {
   const low = Math.min(last.close, close) - Math.random() * volatility * 0.18;
 
   const nextCandle = {
-    time: last.time + 60000,
+    time: last.time + (INTERVAL_MS[state.interval] ?? INTERVAL_MS[DEFAULT_INTERVAL]),
     open: last.close,
     high,
     low,
@@ -391,15 +407,16 @@ function stopMarketStream() {
   }
 }
 
-async function loadInitialCandles() {
+async function loadInitialCandles(interval = state.interval) {
   try {
     const response = await fetch(
-      `${BINANCE_REST_BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${KLINE_INTERVAL}&limit=${MAX_CANDLES}`,
+      `${BINANCE_REST_BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${interval}&limit=${MAX_CANDLES}`,
     );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
+    if (interval !== state.interval) return;
     state.candles = data.map(mapBinanceKline);
     state.limitPrice = latestPrice();
     state.orderBook = createOrderBook(latestPrice());
@@ -416,7 +433,7 @@ function connectMarketStream() {
   state.fallbackMode = false;
   setStreamStatus(reconnectAttempts > 0 ? "reconnecting" : "connecting");
 
-  marketSocket = new WebSocket(BINANCE_WS_URLS[wsEndpointIndex]);
+  marketSocket = new WebSocket(getBinanceWsUrls()[wsEndpointIndex]);
 
   marketSocket.addEventListener("open", () => {
     state.usingRealMarket = true;
@@ -430,7 +447,7 @@ function connectMarketStream() {
     const stream = payload.stream;
     const data = payload.data;
 
-    if (stream.endsWith(`@kline_${KLINE_INTERVAL}`)) {
+    if (stream.endsWith(`@kline_${state.interval}`)) {
       const nextCandle = mapStreamKline(data.k);
       upsertStreamCandle(nextCandle);
       updateChartWithCandle(nextCandle);
@@ -458,7 +475,7 @@ function connectMarketStream() {
     state.usingRealMarket = false;
     if (!state.isRunning || state.shockMode) return;
     reconnectAttempts += 1;
-    wsEndpointIndex = (wsEndpointIndex + 1) % BINANCE_WS_URLS.length;
+    wsEndpointIndex = (wsEndpointIndex + 1) % getBinanceWsUrls().length;
 
     if (reconnectAttempts >= 6) {
       state.fallbackMode = true;
@@ -500,6 +517,29 @@ function resumeMarket() {
   reconnectAttempts = 0;
   wsEndpointIndex = 0;
   connectMarketStream();
+}
+
+async function changeInterval(nextInterval) {
+  if (nextInterval === state.interval || !INTERVAL_MS[nextInterval]) return;
+
+  stopMarketStream();
+  stopLocalStressStream();
+  clearLiquidationPriceLine();
+  chartReady = false;
+  state.interval = nextInterval;
+  state.shockMode = false;
+  state.fallbackMode = false;
+  state.candles = createCandles(nextInterval);
+  state.orderBook = createOrderBook(latestPrice());
+  state.limitPrice = latestPrice();
+  addLog(`已切换 K 线周期到 ${nextInterval}，重新加载历史 K 线。`, "info");
+  setChartData();
+  renderControls();
+  renderPendingOrders();
+  renderMarketFrame();
+  await loadInitialCandles(nextInterval);
+  renderAll();
+  resumeMarket();
 }
 
 function checkLiquidation() {
@@ -658,7 +698,7 @@ function closePosition() {
 }
 
 function resetDemo() {
-  state.candles = createCandles();
+  state.candles = createCandles(state.interval);
   state.balance = INITIAL_BALANCE;
   state.position = null;
   state.pendingOrders = [];
@@ -848,6 +888,9 @@ function renderControls() {
     button.classList.toggle("long", active && state.side === "long");
     button.classList.toggle("short", active && state.side === "short");
   });
+  dom.intervalTabs.querySelectorAll("button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.interval === state.interval);
+  });
 }
 
 function renderMarketFrame() {
@@ -892,6 +935,12 @@ dom.shockToggle.addEventListener("click", () => {
 });
 
 dom.resetButton.addEventListener("click", resetDemo);
+
+dom.intervalTabs.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-interval]");
+  if (!button) return;
+  changeInterval(button.dataset.interval);
+});
 
 dom.orderTypeGroup.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-order-type]");

@@ -188,6 +188,31 @@ h1 {
   white-space: nowrap;
 }
 
+.interval-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(4, minmax(38px, 1fr));
+  gap: 4px;
+  border: 1px solid #26344a;
+  border-radius: 8px;
+  background: #0a101b;
+  padding: 4px;
+}
+
+.interval-tabs button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8b98ae;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.interval-tabs button.active {
+  background: #1c283b;
+  color: #ffffff;
+}
+
 .kline-chart {
   display: block;
   width: 100%;

@@ -19,7 +19,7 @@
             <strong id="markPrice">$68,240.00</strong>
           </div>
           <div class="metric">
-            <span>1m 波动</span>
+            <span>周期波动</span>
             <strong id="priceChange">+0.00</strong>
           </div>
           <div class="metric">
@@ -44,7 +44,12 @@
         <div class="chart-panel">
           <div class="panel-title">
             <div><strong>K 线图</strong></div>
-            <span>Lightweight Charts，模拟 1m candle</span>
+            <div class="interval-tabs" id="intervalTabs" aria-label="K line intervals">
+              <button class="active" data-interval="1m">1m</button>
+              <button data-interval="5m">5m</button>
+              <button data-interval="15m">15m</button>
+              <button data-interval="1h">1h</button>
+            </div>
           </div>
           <div class="kline-chart" id="klineChart" aria-label="K line chart"></div>
         </div>
